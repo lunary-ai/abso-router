@@ -28,6 +28,7 @@ from langchain_core.messages import (
     FunctionMessage
 
 )
+from langchain_core.utils.utils import secret_from_env
 from langchain_core.messages.ai import UsageMetadata
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.messages.ai import (
@@ -35,6 +36,7 @@ from langchain_core.messages.ai import (
     OutputTokenDetails,
     UsageMetadata,
 )
+from pydantic import SecretStr, Field
 
 
 
@@ -323,6 +325,35 @@ class ChatAbso(BaseChatModel):
     """The identifier of the fast model used for simple or lower-complexity tasks, ensuring quick response times."""
     slow_model: str
     """The identifier of the slow model used for complex or high-accuracy tasks where thorough processing is needed."""
+    openai_api_key: Optional[SecretStr] = Field(alias="api_key", default_factory=secret_from_env("OPENAI_API_KEY", default=None))
+    temperature: Optional[float] = None
+    """What sampling temperature to use."""
+    presence_penalty: Optional[float] = None
+    """Penalizes repeated tokens."""
+    frequency_penalty: Optional[float] = None
+    """Penalizes repeated tokens according to frequency."""
+    seed: Optional[int] = None
+    """Seed for generation"""
+    logprobs: Optional[bool] = None
+    """Whether to return logprobs."""
+    top_logprobs: Optional[int] = None
+    """Number of most likely tokens to return at each token position, each with
+     an associated log probability. `logprobs` must be set to true 
+     if this parameter is used."""
+    logit_bias: Optional[Dict[int, int]] = None
+    """Modify the likelihood of specified tokens appearing in the completion."""
+    streaming: bool = False
+    """Whether to stream the results or not."""
+    n: Optional[int] = None
+    """Number of chat completions to generate for each prompt."""
+    top_p: Optional[float] = None
+    """Total probability mass of tokens to consider at each step."""
+    max_tokens: Optional[int] = Field(default=None)
+    """Maximum number of tokens to generate."""
+    reasoning_effort: Optional[str] = None
+    """Constrains effort on reasoning for reasoning models.""" 
+    stop: Optional[Union[List[str], str]] = Field(default=None, alias="stop_sequences")
+    """Default stop sequences."""
 
 
     def _generate(
@@ -343,8 +374,7 @@ class ChatAbso(BaseChatModel):
             "slowModel": self.slow_model,
             "stream": False,
         }
-        # Pass stop tokens to your backend so that it stops generation appropriately.
-        if stop is not None:
+        if self.stop is not None or stop is not None:
             payload["stop"] = stop
 
         headers = {
