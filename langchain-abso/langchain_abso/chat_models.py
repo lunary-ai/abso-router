@@ -1,43 +1,33 @@
-from typing import Any, Dict, Iterator, List, Optional, Union, Mapping, cast
-import requests
-import os
 import json
+import os
+from typing import Any, Dict, List, Mapping, Optional, Union, cast
 
-
-from langchain_core.output_parsers.openai_tools import (
-    JsonOutputKeyToolsParser,
-    PydanticToolsParser,
-    make_invalid_tool_call,
-    parse_tool_call,
-)
-
-from langchain_core.callbacks import (
-    CallbackManagerForLLMRun,
-)
+import requests
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun  # Added import
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
-    AIMessageChunk,
     BaseMessage,
-    InvalidToolCall,
     ChatMessage,
+    FunctionMessage,
     HumanMessage,
+    InvalidToolCall,
+    SystemMessage,
     ToolCall,
     ToolMessage,
-    SystemMessage,
-    FunctionMessage
-
 )
-from langchain_core.utils.utils import secret_from_env
-from langchain_core.messages.ai import UsageMetadata
-from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.messages.ai import (
     InputTokenDetails,
     OutputTokenDetails,
     UsageMetadata,
 )
-from pydantic import SecretStr, Field
-
+from langchain_core.output_parsers.openai_tools import (
+    make_invalid_tool_call,
+    parse_tool_call,
+)
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.utils.utils import secret_from_env
+from pydantic import Field, SecretStr
 
 
 def _format_message_content(content: Any) -> Any:
@@ -58,6 +48,7 @@ def _format_message_content(content: Any) -> Any:
         formatted_content = content
 
     return formatted_content
+
 
 def _convert_message_to_dict(message: BaseMessage) -> dict:
     """Convert a LangChain message to a dictionary.
@@ -95,8 +86,6 @@ def _convert_message_to_dict(message: BaseMessage) -> dict:
                 {k: v for k, v in tool_call.items() if k in tool_call_supported_props}
                 for tool_call in message_dict["tool_calls"]
             ]
-        else:
-            pass
         # If tool calls present, content null value should be None not empty string.
         if "function_call" in message_dict or "tool_calls" in message_dict:
             message_dict["content"] = message_dict["content"] or None
@@ -144,11 +133,11 @@ def _convert_dict_to_message(_dict: Mapping[str, Any]) -> BaseMessage:
         # Fix for azure
         # Also OpenAI returns None for tool invocations
         content = _dict.get("content", "") or ""
-        additional_kwargs: Dict = {}
+        additional_kwargs: Dict[str, Any] = {}
         if function_call := _dict.get("function_call"):
             additional_kwargs["function_call"] = dict(function_call)
-        tool_calls = []
-        invalid_tool_calls = []
+        tool_calls: List[Any] = []
+        invalid_tool_calls: List[Any] = []
         if raw_tool_calls := _dict.get("tool_calls"):
             additional_kwargs["tool_calls"] = raw_tool_calls
             for raw_tool_call in raw_tool_calls:
@@ -169,10 +158,7 @@ def _convert_dict_to_message(_dict: Mapping[str, Any]) -> BaseMessage:
             invalid_tool_calls=invalid_tool_calls,
         )
     elif role in ("system", "developer"):
-        if role == "developer":
-            additional_kwargs = {"__openai_role__": role}
-        else:
-            additional_kwargs = {}
+        additional_kwargs = {"__openai_role__": role} if role == "developer" else {}
         return SystemMessage(
             content=_dict.get("content", ""),
             name=name,
@@ -210,6 +196,7 @@ def _lc_invalid_tool_call_to_openai_tool_call(
         },
     }
 
+
 def _lc_tool_call_to_openai_tool_call(tool_call: ToolCall) -> dict:
     return {
         "type": "function",
@@ -221,11 +208,11 @@ def _lc_tool_call_to_openai_tool_call(tool_call: ToolCall) -> dict:
     }
 
 
-def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
+def _create_usage_metadata(oai_token_usage: Dict[str, Any]) -> UsageMetadata:
     input_tokens = oai_token_usage.get("prompt_tokens", 0)
     output_tokens = oai_token_usage.get("completion_tokens", 0)
     total_tokens = oai_token_usage.get("total_tokens", input_tokens + output_tokens)
-    input_token_details: dict = {
+    input_token_details: Dict[str, Any] = {
         "audio": (oai_token_usage.get("prompt_tokens_details") or {}).get(
             "audio_tokens"
         ),
@@ -233,7 +220,7 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             "cached_tokens"
         ),
     }
-    output_token_details: dict = {
+    output_token_details: Dict[str, Any] = {
         "audio": (oai_token_usage.get("completion_tokens_details") or {}).get(
             "audio_tokens"
         ),
@@ -241,26 +228,35 @@ def _create_usage_metadata(oai_token_usage: dict) -> UsageMetadata:
             "reasoning_tokens"
         ),
     }
+    filtered_input_token_details = {
+        k: v for k, v in input_token_details.items() if v is not None
+    }
+    input_token_details_final = InputTokenDetails(
+        **cast(InputTokenDetails, filtered_input_token_details)
+    )
+    filtered_output_token_details = {
+        k: v for k, v in output_token_details.items() if v is not None
+    }
+    output_token_details_final = OutputTokenDetails(
+        **cast(OutputTokenDetails, filtered_output_token_details)
+    )
+
     return UsageMetadata(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
-        input_token_details=InputTokenDetails(
-            **{k: v for k, v in input_token_details.items() if v is not None}
-        ),
-        output_token_details=OutputTokenDetails(
-            **{k: v for k, v in output_token_details.items() if v is not None}
-        ),
+        input_token_details=input_token_details_final,
+        output_token_details=output_token_details_final,
     )
 
 
 def _create_chat_result(
     response: Union[dict, Any],
-    generation_info: Optional[Dict] = None,
+    generation_info: Optional[Dict[str, Any]] = None,
 ) -> ChatResult:
-    generations = []
+    generations: List[ChatGeneration] = []
 
-    response_dict = (
+    response_dict: Dict[str, Any] = (
         response if isinstance(response, dict) else response.model_dump()
     )
     if response_dict.get("error"):
@@ -287,45 +283,102 @@ def _create_chat_result(
         "system_fingerprint": response_dict.get("system_fingerprint", ""),
     }
 
-    if getattr(response, "choices", None):
-        message = response.choices[0].message  # type: ignore[attr-defined]
-        if hasattr(message, "parsed"):
-            generations[0].message.additional_kwargs["parsed"] = message.parsed
-        if hasattr(message, "refusal"):
-            generations[0].message.additional_kwargs["refusal"] = message.refusal
+    if not isinstance(response, dict) and getattr(response, "choices", None):
+        message_obj = response.choices[0].message
+        if hasattr(message_obj, "parsed"):
+            generations[0].message.additional_kwargs["parsed"] = message_obj.parsed
+        if hasattr(message_obj, "refusal"):
+            generations[0].message.additional_kwargs["refusal"] = message_obj.refusal
 
     return ChatResult(generations=generations, llm_output=llm_output)
 
 
 class ChatAbso(BaseChatModel):
-    """A smart LLM proxy that automatically routes requests between fast and slow models based on prompt complexity. 
-    It uses several heuristics to determine the complexity of the prompt and routes the request to the appropriate model.
-    The model used can be specified by the user. 
-    It only supports openai models for now, but will support other models in the future.
+    """A smart LLM proxy that automatically routes requests between fast and slow
+    models based on prompt complexity. It uses several heuristics to determine
+    the complexity of the prompt and routes the request to the appropriate model.
+    The model used can be specified by the user.
+    It only supports openai models for now, but will support other models in the
+    future.
     You need to have an OpenAI API key to use this model.
 
-    .. dropdown:: Setup
-        :open:
-        Set then environment variable ``OPENAI_API_KEY``.
+    Setup:
+      Instal ``langchain-abso`` and set the environment variable ``OPENAI_API_KEY``.
 
         .. code-block:: bash
 
-            pip install -U langchain-openai
+            pip install -U langchain-abso 
             export OPENAI_API_KEY="your-api-key"
 
-    .. dropdown:: Usage
-    Example:
+    Key init args - client params:
+        fast_model: str
+            The identifier of the fast model used for simple or lower-complexity tasks,
+            ensuring quick response times.
+        slow_model: str
+            The identifier of the slow model used for complex or high-accuracy tasks where
+            thorough processing is needed.
+        openai_api_key: Optional[SecretStr]
+            The OpenAI API key. If not passed in, it will be read from the environment
+            variable ``OPENAI_API_KEY``.
+        temperature: Optional[float]
+            What sampling temperature to use.
+        presence_penalty: Optional[float]
+            Penalizes repeated tokens.
+        frequency_penalty: Optional[float]
+            Penalizes repeated tokens according to frequency.
+        seed: Optional[int]
+            Seed for generation.
+        logprobs: Optional[bool]
+            Whether to return logprobs.
+        top_logprobs: Optional[int]
+            Number of most likely tokens to return at each token position, each with
+            an associated log probability. `logprobs` must be set to true
+            if this parameter is used.
+        logit_bias: Optional[Dict[int, int]]
+            Modify the likelihood of specified tokens appearing in the completion.
+        streaming: bool
+            Whether to stream the results or not.
+        n: Optional[int]
+            Number of chat completions to generate for each prompt.
+        top_p: Optional[float]
+            Total probability mass of tokens to consider at each step.
+        max_tokens: Optional[int]
+            Maximum number of tokens to generate.
+        reasoning_effort: Optional[str]
+            Constrains effort on reasoning for reasoning models.
+        stop: Optional[Union[List[str], str]]
+            Default stop sequences.
+
+    Key init args - completion params:
+        messages: List[BaseMessage]
+            The prompt composed of a list of messages.
+        stop: Optional[List[str]]
+
+    Instantiate:
+      .. code-block:: python
+        from langchain_abso import ChatAbso
+        abso = ChatAbso(fast_model="gpt-4o", slow_model="o3-mini")
+
+    Invoke: 
         .. code-block:: python
-            abso = ChatAbso(fast_model="gpt-4o", slow_model="o3-mini")
-            result = abso.invoke([HumanMessage(content="hello")])
-            result = model.batch([[HumanMessage(content="What is the meaning of life?")]
+            messages = [
+                ("system", "You are a helpful translator. Translate the user sentence to French."),
+                ("human", "I love programming."),
+            ]
+            llm.invoke(messages)
+
     """
 
-    fast_model: str 
-    """The identifier of the fast model used for simple or lower-complexity tasks, ensuring quick response times."""
+    fast_model: str
+    """The identifier of the fast model used for simple or lower-complexity tasks, 
+    ensuring quick response times."""
     slow_model: str
-    """The identifier of the slow model used for complex or high-accuracy tasks where thorough processing is needed."""
-    openai_api_key: Optional[SecretStr] = Field(alias="api_key", default_factory=secret_from_env("OPENAI_API_KEY", default=None))
+    """The identifier of the slow model used for complex or high-accuracy tasks where 
+    thorough processing is needed."""
+    openai_api_key: Optional[SecretStr] = Field(
+        alias="api_key",
+        default_factory=secret_from_env("OPENAI_API_KEY", default=None),
+    )
     temperature: Optional[float] = None
     """What sampling temperature to use."""
     presence_penalty: Optional[float] = None
@@ -333,7 +386,7 @@ class ChatAbso(BaseChatModel):
     frequency_penalty: Optional[float] = None
     """Penalizes repeated tokens according to frequency."""
     seed: Optional[int] = None
-    """Seed for generation"""
+    """Seed for generation."""
     logprobs: Optional[bool] = None
     """Whether to return logprobs."""
     top_logprobs: Optional[int] = None
@@ -351,55 +404,66 @@ class ChatAbso(BaseChatModel):
     max_tokens: Optional[int] = Field(default=None)
     """Maximum number of tokens to generate."""
     reasoning_effort: Optional[str] = None
-    """Constrains effort on reasoning for reasoning models.""" 
+    """Constrains effort on reasoning for reasoning models."""
     stop: Optional[Union[List[str], str]] = Field(default=None, alias="stop_sequences")
     """Default stop sequences."""
-
 
     def _generate(
         self,
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
-        **kwargs
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
     ) -> ChatResult:
         """
         Args:
-            messages: the prompt composed of a list of messages.
-            stop: a list of stop tokens that should be respected and, if triggered,
-                must be included as part of the final output.
+            messages: The prompt composed of a list of messages.
+            stop: A list of stop tokens that should be respected and, if triggered,
+                  must be included as part of the final output.
+            run_manager: Callback manager for handling events.
         """
-        payload = {
+        # Use the provided stop tokens if given, otherwise fall back to self.stop.
+        effective_stop: Optional[Union[List[str], str]] = (
+            stop if stop is not None else self.stop
+        )
+
+        payload: Dict[str, Any] = {
             "messages": [_convert_message_to_dict(message) for message in messages],
             "fastModel": self.fast_model,
             "slowModel": self.slow_model,
             "stream": False,
         }
-        if self.stop is not None or stop is not None:
-            payload["stop"] = stop
+        if effective_stop is not None:
+            payload["stop"] = effective_stop
 
         headers = {
-            'Authorization': f'Bearer {os.environ.get("OPENAI_API_KEY")}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+            "Content-Type": "application/json",
         }
 
         response = requests.post(
-            'http://localhost:8787/v1/chat/completions',
+            "http://router.abso.ai/v1/chat/completions",
             json=payload,
             headers=headers,
         )
 
-        generation_info = {"headers": dict(response.headers)}
+        generation_info: Dict[str, Any] = {"headers": dict(response.headers)}
         result = _create_chat_result(response.json(), generation_info)
 
-        if stop is not None and result.generations:
-            stop_token = stop[0] if isinstance(stop, list) else stop
+        if effective_stop is not None and result.generations:
+            stop_token: str = (
+                effective_stop[0]
+                if isinstance(effective_stop, list)
+                else effective_stop
+            )
             for generation in result.generations:
-                if generation.generation_info.get("finish_reason") == "stop":
+                if (generation.generation_info or {}).get("finish_reason") == "stop":
                     content = generation.message.content or ""
-                    if not content.endswith(stop_token):
+                    if isinstance(content, str) and not content.endswith(stop_token):
                         generation.message.content = content + stop_token
 
         return result
+
     @property
     def _llm_type(self) -> str:
         """Get the type of language model used by this chat model."""

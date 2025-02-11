@@ -3,10 +3,10 @@
 from typing import List
 
 import pytest
+from langchain_abso.chat_models import ChatAbso
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, LLMResult
 
-from ChatAbso import ChatAbso
 
 
 @pytest.mark.scheduled
@@ -34,6 +34,3 @@ def test_abso_generate() -> None:
         assert isinstance(response.text, str)
         assert response.text == response.message.content
     assert chat_messages == messages_copy
-
-@pytest.mark.scheduled
-def test_abso_stop
