@@ -45,11 +45,12 @@ app.post("/v1/chat/completions", async (c) => {
 
   try {
     const rawBody = await c.req.json();
+    console.log(rawBody);
     const body = (await RequestSchema.parseAsync(rawBody)) as RequestBody;
     const authHeader = c.req.header("Authorization");
 
     complexityCheckClient = new OpenAI({
-      apiKey: authHeader?.split(" ")[1] || process.env.OPENAI_API_KEY,
+      apiKey: authHeader?.split(" ")[1],
       baseURL: "https://api.openai.com/v1",
     });
 
@@ -91,10 +92,7 @@ app.post("/v1/chat/completions", async (c) => {
     logModelDetermination(prompt, useSlowModel, modelConfig, reason);
 
     const client = new OpenAI({
-      apiKey:
-        modelConfig.apiKey ||
-        authHeader?.split(" ")[1] ||
-        process.env.OPENAI_API_KEY,
+      apiKey: modelConfig.apiKey || authHeader?.split(" ")[1],
       baseURL: modelConfig.apiUrl || "https://api.openai.com/v1",
     });
 

@@ -41,13 +41,10 @@ export const RequestSchema = z
     stream: z.boolean().optional(),
   })
   .passthrough() // Allow any additional properties
-  .refine(
-    (data) => data.fastModel || data.slowModel || process.env.OPENAI_API_KEY,
-    {
-      message:
-        "At least one model configuration or OPENAI_API_KEY must be provided",
-    }
-  );
+  .refine((data) => data.fastModel || data.slowModel, {
+    message:
+      "At least one model configuration or OPENAI_API_KEY must be provided",
+  });
 
 // Model config validator
 export const validateModelConfig = (config: ModelConfig) => {
